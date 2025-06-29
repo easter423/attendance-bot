@@ -63,6 +63,9 @@ def check_attendance() -> bool:
     try:
         resp = sess.post(URL, data=encoded, timeout=15)
         resp.raise_for_status()            # HTTP 오류 검증
+        print(resp.status_code)
+        if resp.status_code != 200:
+            raise RuntimeError(f"🔴 HTTP 오류: {resp.status_code} - {resp.reason}")
         data = resp.json()                 # {"list": "...", "check_date_list": {...}}
         
         # ── 5) 오늘 출석 여부 판별 ──
