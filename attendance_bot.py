@@ -1,7 +1,7 @@
 # attendance_bot.py
 import os, asyncio, traceback, discord
 from discord.ext import tasks, commands
-from datetime import datetime
+from datetime import datetime, timezone
 from check_attendance import check_attendance   # ← 동기 함수
 
 TOKEN      = os.getenv("DISCORD_TOKEN")
@@ -37,6 +37,20 @@ async def attendance_loop():
     except Exception:
         err = traceback.format_exc(limit=1)
         await channel.send(f"🚨 [{now}] 출석 체크 오류!\n```{err}```")
+
+# ─────────────────────────────────────────────────────────
+# !남은시간  → 다음 자동 알림까지 남은 시간 표시
+# ─────────────────────────────────────────────────────────
+@bot.command(name="남은시간")
+async def cmd_remaining(ctx):
+    if attendance_loop.next_iteration is None:          # 루프가 아직 안 돌았다면
+        await ctx.send("⏳ 아직 루프가 초기화되지 않았어요.")
+        return
+    now  = datetime.now(timezone.utc)
+    next = attendance_loop.next_iteration               # UTC datetime 객체 :contentReference[oaicite:3]{index=3}
+    remaining = next - now
+    minutes, seconds = divmod(int(remaining.total_seconds()), 60)
+    await ctx.send(f"⏰ 다음 자동 알림까지 {minutes}분 {seconds}초 남았습니다.")
 
 # ⑤ 봇 준비 → Slash 동기화 & 태스크 시작
 @bot.event
