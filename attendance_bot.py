@@ -1,26 +1,23 @@
-# attendance_bot.py  –  Discord slash-command 버전
-import os, asyncio, traceback
-import discord
-from discord.ext import tasks
-from check_attendance import check_attendance     # 동기 함수
+# attendance_bot.py
+import os, asyncio, traceback, discord
+from discord.ext import tasks, commands
 from datetime import datetime
+from check_attendance import check_attendance   # ← 동기 함수
 
-# ── 환경 변수 ─────────────────────────────────────────────
-TOKEN      = os.getenv("DISCORD_TOKEN")           # 필수
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))         # 알림 받을 채널 ID
+TOKEN      = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-# ── Intents : Slash 명령은 guilds 권한만으로 충분 ────────
-intents = discord.Intents.default()               # message_content 불필요
-bot = discord.Bot(intents=intents)                # prefix 없이도 OK (discord.py ≥2.3)
+# ① Intents ─ Slash 명령만 쓰면 기본값이면 충분합니다
+intents = discord.Intents.default()
 
-# ─────────────────────────────────────────────────────────
-# 1. Slash Command: /확인
-# ─────────────────────────────────────────────────────────
+# ② Bot 인스턴스 (prefix는 의미 없지만 필수 파라미터라 빈 문자열 사용)
+bot = commands.Bot(command_prefix="", intents=intents)
+
+# ③ Slash(/확인) 명령 등록
 @bot.tree.command(name="확인", description="오늘 출석 여부를 즉시 확인합니다")
 async def slash_check(interaction: discord.Interaction):
-    """/확인 입력 시 즉시 출석 여부 반환"""
-    await interaction.response.defer(ephemeral=True)   # 응답 지연 선언
-    loop = asyncio.get_event_loop()
+    await interaction.response.defer(ephemeral=True)          # 3초 제한 회피
+    loop = asyncio.get_running_loop()
     try:
         ok = await loop.run_in_executor(None, check_attendance)
         msg = "✅ 이미 출석했습니다!" if ok else "❌ 아직 미출석입니다!"
@@ -28,9 +25,7 @@ async def slash_check(interaction: discord.Interaction):
         msg = f"🚨 오류 발생: {e}"
     await interaction.followup.send(msg)
 
-# ─────────────────────────────────────────────────────────
-# 2. 1시간 주기 자동 출석 체크
-# ─────────────────────────────────────────────────────────
+# ④ 1시간 주기 자동 체크 태스크
 @tasks.loop(hours=1)
 async def attendance_loop():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -43,18 +38,15 @@ async def attendance_loop():
         err = traceback.format_exc(limit=1)
         await channel.send(f"🚨 [{now}] 출석 체크 오류!\n```{err}```")
 
-# ─────────────────────────────────────────────────────────
-# 3. on_ready: Slash 동기화 + 태스크 시작
-# ─────────────────────────────────────────────────────────
+# ⑤ 봇 준비 → Slash 동기화 & 태스크 시작
 @bot.event
 async def on_ready():
-    await bot.tree.sync()                      # 슬래시 명령 전역 등록 :contentReference[oaicite:3]{index=3}
-    print(f"✅ Bot ready: {bot.user} (ID {bot.user.id})")
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send(f"🤖 Toeic Bot이 실행되었습니다 ({bot.user.id})")
+    await bot.tree.sync()          # 길드 범위 지정 안 하면 전역 등록
+    print(f"✅ Bot ready: {bot.user} ({bot.user.id})")
+    ch = bot.get_channel(CHANNEL_ID)
+    if ch:
+        await ch.send(f"🤖 Toeic Bot 실행 완료 ({bot.user.id})")
     if not attendance_loop.is_running():
         attendance_loop.start()
 
-# ─────────────────────────────────────────────────────────
 bot.run(TOKEN)
