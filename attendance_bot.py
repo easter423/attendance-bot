@@ -14,7 +14,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot logged in: {bot.user} (ID: {bot.user.id})")
+    print(f"✅ Bot logged in: {bot.user} (ID: {bot.user.id}) (Token: {TOKEN}) ({CHANNEL_ID})")
+    channel = bot.get_channel(CHANNEL_ID)
+    await channel.send(f"✅ Toeic Bot이 방금 실행되었습니다: {bot.user} (ID: {bot.user.id})")
     if not attendance_loop.is_running():
         attendance_loop.start()
 
