@@ -37,7 +37,8 @@ if not (ID and PW):
     raise RuntimeError("HACKERS_ID / HACKERS_PW 환경변수를 설정하세요")
 
 # ── 세션 + 쿠키 ──────────────────────────────────────
-sess = requests.Session(); sess.headers.update(HEADERS)
+sess = requests.Session()
+sess.headers.update(HEADERS)
 
 if COOKIE_FILE.exists():
     try:
@@ -56,8 +57,6 @@ def _login():
         "_token": token.group(1) if token else "",
         "login_id": ID,
         "password": PW,
-        "keep_login": "on",
-        "service_id": "3090",
         "return_url": ATTEND_URL,
     }
 
@@ -67,6 +66,12 @@ def _login():
     if resp.status_code not in (200, 302):
         _dump(resp.text, "login_fail")
         raise RuntimeError("로그인 실패")
+    
+    sess.headers["Referer"] = BASE
+    resp = sess.get(ATTEND_URL, timeout=10, allow_redirects=False)
+    if resp.status_code != 200:
+        _dump(resp.text, "login_redirect")
+        raise RuntimeError("로그인 후 리다이렉트 실패")
 
     COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
     COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
