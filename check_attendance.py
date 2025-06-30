@@ -42,7 +42,8 @@ sess.headers.update(HEADERS)
 
 if COOKIE_FILE.exists():
     try:
-        sess.cookies.update(pickle.loads(COOKIE_FILE.read_bytes()))
+        #sess.cookies.update(pickle.loads(COOKIE_FILE.read_bytes()))
+        sess.cookies.update('''_ga=GA1.1.168446314.1741787380; _ga_7QMSST0BPJ=GS1.1.1741787380.1.0.1741787384.56.0.0; _wp_uid=1-52ffbee01b67f3f8d52be23b88a25f5b-s1709510058.587801|windows_10|chrome-1u36b1v; _fcOM={"k":"cd5251dd5b3ff15e-dad03af1942c2bb73e3a5e","i":"39.125.69.2.9389608","r":1747574823604}; _ga_NJH9HGX12F=GS2.1.s1747641395$o2$g0$t1747641395$j60$l0$h0$d85a1TcmaFjaO6_ySBjQr5fPmVfDAjxZvxw; _gcl_gs=2.1.k1$i1748215597$u132735452; _gcl_aw=GCL.1748215601.Cj0KCQjwlrvBBhDnARIsAHEQgOTi8h7951XDuJaI0GozPuL4yKEpLJMJsE4raTIzkPnqZ_To14q7KqUaAl5XEALw_wcB; _gcl_au=1.1.1168483440.1749636584; PHPSESSID=v2uqakejk9vprd67s8j7daeq25; _TRK_CR=https%3A%2F%2Fchamp.hackers.com%2F; _TRK_UID=b95aab3563189a7fad5ba0691d09f5ac:7; _TRK_SID=146d6a062e4f69667930cd7df241afd7; _TRK_CQ=%3Fservice_id%3D3090%26return_url%3Dhttps%253A%252F%252Fchamp.hackers.com%252F%253Fr%253Dchampstudy%2526c%253Dmypage%252Fmy_lec%252Fmy_lec_refund%2526sub%253Drefund_class_view%2526odri_id%253D1493945512; XSRF-TOKEN=eyJpdiI6IlJsM1dZZlBZVWFcL0ZCWkZTYmpBYkVRPT0iLCJ2YWx1ZSI6ImFBdE4rSUtkWkZJeFJVY3h4OW1xbXRwa3I4WHozTzdHaWRhMUdieGswalI0XC9JUmxYcTZCcnRtZWpNaEJuUWY3YTJhTitCbnBFeUZtS3hwWnh2RUlPQT09IiwibWFjIjoiNzIwZGJkZDNjMTEzZDNjZDllY2EzYjQzYjI2MWUzOWQzNjhlOGE4NmI5NDVmZWU4M2VkOGFhYmJjMWViNjAwMiJ9; hackers=eyJpdiI6InBHWml1d0o2Y3Jpc1F1XC9ub2I0bHRBPT0iLCJ2YWx1ZSI6IitlM1lRRmVOSkozcUZLNG9SbVpCcTUyak9ZNXd6VlJwMVwvcGJpdmxsVE5TMThiRWVEV2hwNG5UVUF2R2MrYTgzUE9HSGVPOEdCVkRSR2U5bFZEUW56dz09IiwibWFjIjoiM2NlZmY3YmQ2NmY4NjVkM2Y5NmIzYTE1ZDMyOTViMWNkNGUwMzE5MDJkNTI2NmQwMjdmYjJiOWI0OTJmY2Q4MiJ9; _ga_QSLSW7WENJ=GS2.1.s1751278061$o76$g1$t1751284170$j53$l0$h0; cto_bundle=5KTAWF8lMkJ0ZVZUVnFyR2xyJTJGV2pkTGd2cHBFQ3ExekRVc1NCcUVFS0NaR3NyMkVJSkcwZU1qanA4eWVCc1prOXAySDkzcGtRTFJkRHpaTHp0M04wM2Y4TDNrN3l0Y29PTkhWYVlFclhHN3RJaVhnWWxpJTJGalVrQ0U3cDlrdEYwc0Fnam15TzVFb2t5WVNBYTdrdUxHejRJakNzY1F1S2JHVlBheFl4Y1VxbEdCJTJCUW95NXoyS1dOV3RaR3hGSXRDbFdRUkU5JTJGaEJJJTJGaWpDV2hxRGt5ekEyVGZkMGZ1NUFudWVWY1YzdTlJJTJCUzNTNGpHa0ZoWEVyYXRVaXMxdnZLbGI0MXBwOWpnJTJGNUJHd0RFM2dYOU02ZVlOZW1QZWpIbjVPTVlvSHBIMkh0NUNpdnlXcUlkQWgxeiUyQjgyNjBjUXdJcTlTaVlPUQ; _TRK_EX=3''')
         logging.info("✅ 쿠키 로드 완료")
     except Exception:
         COOKIE_FILE.unlink(True)
@@ -79,7 +80,7 @@ def _login():
         raise RuntimeError("로그인 후 리다이렉트 실패")
 
     COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
+    #COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
     logging.info("🔑 쿠키 저장 성공")
 
 # ── cal_list 추출 ────────────────────────────────────
