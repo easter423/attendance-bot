@@ -69,17 +69,7 @@ def _login():
     
     # resp 요청 및 응답 데이터 전체 출력(헤더 등)
     logging.info("로그인 성공: %s", resp.status_code)
-    logging.info("응답 헤더: %s", resp.headers)
-    logging.info("응답 쿠키: %s", resp.cookies)
-    logging.info("응답 본문: %s", resp.text[:500])  # 처음 500자만 출력
-    logging.info("요청 URL: %s", resp.url)
-    logging.info("요청 헤더: %s", resp.request.headers)
-    logging.info("요청 본문: %s", resp.request.body)
-    logging.info("요청 쿠키: %s", resp.request.headers.get("Cookie"))
-    logging.info("요청 메소드: %s", resp.request.method)
-    logging.info("요청 쿼리: %s", resp.request.url.split('?')[1] if '?' in resp.request.url else None)
-    logging.info("요청 시간: %s", resp.elapsed)
-    logging.info("요청 프로토콜: %s", resp.request.url.split(':')[0])
+    logging.info("resp: %s", resp.text)
 
 
     sess.headers["Referer"] = BASE
