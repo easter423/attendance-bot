@@ -1,8 +1,9 @@
 # attendance_bot.py
 import os, asyncio, traceback, discord
 from discord.ext import tasks, commands
+from discord.ext.commands import Paginator
 from datetime import datetime, timezone
-from check_attendance import check_attendance   # ← 동기 함수
+from check_attendance import check_attendance, fetch_cal_list   # ← 동기 함수
 
 TOKEN      = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
@@ -24,6 +25,21 @@ async def cmd_check(ctx):
     except Exception as e:
         msg = f"🚨 오류 발생: {e}"
     await ctx.send(f"[{now}] {msg}")
+
+@bot.command(name="전체확인")
+async def cmd_full(ctx):
+    """cal_list의 모든 출석 날을 메시지로 출력합니다."""
+    await ctx.defer()
+    try:
+        cal = await asyncio.get_running_loop().run_in_executor(None, fetch_cal_list)
+        lines = [f"{d}: {v}" for d, v in sorted(cal.items())]
+        paginator = Paginator(prefix="```", suffix="```")
+        for line in lines:
+            paginator.add_line(line)
+        for page in paginator.pages:
+            await ctx.send(page)
+    except Exception as e:
+        await ctx.send(f"🚨 오류 발생: {e}")
 
 # ④ 1시간 주기 자동 체크 태스크
 @tasks.loop(hours=1)

@@ -44,6 +44,18 @@ def check_attendance() -> bool:
     # ③ 출석 여부
     today = date.today().strftime("%Y-%m-%d")
     return today in cal_dict                    # 포함돼 있으면 이미 출석한 날
+    
+def fetch_cal_list() -> dict:
+    """cal_list 전체 JSON 반환 (날짜 → 'Y')."""
+    resp = sess.get(URL, timeout=15)
+    resp.raise_for_status()
+    m = re.search(r"cal_list\s*=\s*(\{[^}]+\})", resp.text)
+    if not m:
+        raise RuntimeError("cal_list 객체를 찾을 수 없습니다.")
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return json.loads(m.group(1).replace("'", '"'), strict=False)
 
 if __name__ == "__main__":
     try:
