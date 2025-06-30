@@ -1,121 +1,212 @@
-# check_attendance.py  – 302 자동 추적 + Referer 동적 설정
-import os, re, json, pickle, requests, logging, time
-from datetime import date
-from pathlib import Path
+r"""
+Hackers Champ 출석 여부 자동 확인 스크립트
+------------------------------------------------
+• _login()          : 세션이 비로그인 상태일 때 로그인 수행
+• fetch_cal_list()  : cal_list JSON → dict 반환 (자동 재로그인 & 재시도 3회)
+• check_attendance(): 오늘 날짜 출석 여부 True/False 반환
 
-# ── 기본 로깅 ─────────────────────────────────────────
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(message)s")
-DBG = Path("/tmp/toeic_debug"); DBG.mkdir(exist_ok=True)
+Python 3.9+ (zoneinfo)
+의존성: requests, beautifulsoup4
+       $ pip install requests beautifulsoup4
+"""
 
-def _dump(txt, tag):
-    p = DBG / f"{tag}_{int(time.time())}.html"
-    p.write_text(txt, encoding="utf-8")
-    logging.info("💾 %s (%dB)", p, p.stat().st_size)
+from __future__ import annotations
 
-# ── URL 구성 ────────────────────────────────────────
-BASE         = "https://member.hackers.com"
-CHAMP_HOME   = "https://champ.hackers.com/"
-ATTEND_URL   = (CHAMP_HOME +
-                "?r=champstudy&c=mypage/my_lec/my_lec_refund"
-                "&sub=refund_class_view&odri_id=1493945512")
-LOGIN_PAGE   = f"{BASE}/login?service_id=3090&return_url={ATTEND_URL}"
-LOGIN_POST   = f"{BASE}/login"
-COOKIE_FILE  = Path.home() / ".cache/toeic_bot_cookies.pkl"
+import json
+import logging
+import re
+import os
+import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from typing import Dict, Optional
 
-HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/137.0.0.0 Safari/537.36"),
-    "Accept": ("text/html,application/xhtml+xml,"
-               "application/xml;q=0.9,*/*;q=0.8"),
-    "Content-Type": "application/x-www-form-urlencoded",
+import requests
+from bs4 import BeautifulSoup
+
+__all__ = [
+    "_login",
+    "fetch_cal_list",
+    "check_attendance",
+]
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+#  Global HTTP session & constants
+# ---------------------------------------------------------------------------
+SESS = requests.Session()
+
+_COMMON_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
+    "Cache-Control": "max-age=0",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0.0.0 Safari/537.36"
+    ),
 }
+SESS.headers.update(_COMMON_HEADERS)
 
-ID, PW = os.getenv("HACKERS_ID"), os.getenv("HACKERS_PW")
-if not (ID and PW):
+_LOGIN_PAGE = (
+    "https://member.hackers.com/login"
+    "?service_id=3090&return_url="
+    "https%3A%2F%2Fchamp.hackers.com%2F"
+    "%3Fr%3Dchampstudy%26c%3Dmypage"
+    "%2Fmy_lec%2Fmy_lec_refund%26sub%3Drefund_class_view"
+    "%26odri_id%3D1493945512"
+)
+_LOGIN_POST = "https://member.hackers.com/login"
+_TARGET_URL = (
+    "https://champ.hackers.com/"
+    "?r=champstudy&c=mypage/my_lec/my_lec_refund"
+    "&sub=refund_class_view&odri_id=1493945512"
+)
+
+# 로그인 정보 (실 서비스에서는 안전한 저장/주입 필요)
+_LOGIN_ID, _PASSWORD = os.getenv("HACKERS_ID"), os.getenv("HACKERS_PW")
+if not (_LOGIN_ID and _PASSWORD):
     raise RuntimeError("HACKERS_ID / HACKERS_PW 환경변수를 설정하세요")
 
-# ── 세션 + 쿠키 ──────────────────────────────────────
-sess = requests.Session()
-sess.headers.update(HEADERS)
+# ---------------------------------------------------------------------------
+#  Private helpers
+# ---------------------------------------------------------------------------
 
-if COOKIE_FILE.exists():
+def _extract_csrf_token(html: str) -> str:
+    """페이지 HTML에서 hidden _token 값을 추출한다."""
+    soup = BeautifulSoup(html, "html.parser")
+    tag = soup.find("input", attrs={"name": "_token"})
+    if not tag or not tag.get("value"):
+        raise RuntimeError("CSRF token을 찾을 수 없습니다.")
+    return tag["value"]
+
+
+def _parse_cal_list(html: str) -> Optional[Dict[str, str]]:
+    """var cal_list = {...}; 를 dict 로 변환 (없으면 None)."""
+    m = re.search(r"var\s+cal_list\s*=\s*(\{[\s\S]*?\});", html)
+    if not m:
+        return None
+    js_obj = m.group(1)
+    # JS 객체 → JSON 호환(따옴표는 이미 \"…\")
     try:
-        #sess.cookies.update(pickle.loads(COOKIE_FILE.read_bytes()))
-        sess.cookies.update('''_ga=GA1.1.168446314.1741787380; _ga_7QMSST0BPJ=GS1.1.1741787380.1.0.1741787384.56.0.0; _wp_uid=1-52ffbee01b67f3f8d52be23b88a25f5b-s1709510058.587801|windows_10|chrome-1u36b1v; _fcOM={"k":"cd5251dd5b3ff15e-dad03af1942c2bb73e3a5e","i":"39.125.69.2.9389608","r":1747574823604}; _ga_NJH9HGX12F=GS2.1.s1747641395$o2$g0$t1747641395$j60$l0$h0$d85a1TcmaFjaO6_ySBjQr5fPmVfDAjxZvxw; _gcl_gs=2.1.k1$i1748215597$u132735452; _gcl_aw=GCL.1748215601.Cj0KCQjwlrvBBhDnARIsAHEQgOTi8h7951XDuJaI0GozPuL4yKEpLJMJsE4raTIzkPnqZ_To14q7KqUaAl5XEALw_wcB; _gcl_au=1.1.1168483440.1749636584; PHPSESSID=v2uqakejk9vprd67s8j7daeq25; _TRK_CR=https%3A%2F%2Fchamp.hackers.com%2F; _TRK_UID=b95aab3563189a7fad5ba0691d09f5ac:7; _TRK_SID=146d6a062e4f69667930cd7df241afd7; _TRK_CQ=%3Fservice_id%3D3090%26return_url%3Dhttps%253A%252F%252Fchamp.hackers.com%252F%253Fr%253Dchampstudy%2526c%253Dmypage%252Fmy_lec%252Fmy_lec_refund%2526sub%253Drefund_class_view%2526odri_id%253D1493945512; XSRF-TOKEN=eyJpdiI6IlJsM1dZZlBZVWFcL0ZCWkZTYmpBYkVRPT0iLCJ2YWx1ZSI6ImFBdE4rSUtkWkZJeFJVY3h4OW1xbXRwa3I4WHozTzdHaWRhMUdieGswalI0XC9JUmxYcTZCcnRtZWpNaEJuUWY3YTJhTitCbnBFeUZtS3hwWnh2RUlPQT09IiwibWFjIjoiNzIwZGJkZDNjMTEzZDNjZDllY2EzYjQzYjI2MWUzOWQzNjhlOGE4NmI5NDVmZWU4M2VkOGFhYmJjMWViNjAwMiJ9; hackers=eyJpdiI6InBHWml1d0o2Y3Jpc1F1XC9ub2I0bHRBPT0iLCJ2YWx1ZSI6IitlM1lRRmVOSkozcUZLNG9SbVpCcTUyak9ZNXd6VlJwMVwvcGJpdmxsVE5TMThiRWVEV2hwNG5UVUF2R2MrYTgzUE9HSGVPOEdCVkRSR2U5bFZEUW56dz09IiwibWFjIjoiM2NlZmY3YmQ2NmY4NjVkM2Y5NmIzYTE1ZDMyOTViMWNkNGUwMzE5MDJkNTI2NmQwMjdmYjJiOWI0OTJmY2Q4MiJ9; _ga_QSLSW7WENJ=GS2.1.s1751278061$o76$g1$t1751284170$j53$l0$h0; cto_bundle=5KTAWF8lMkJ0ZVZUVnFyR2xyJTJGV2pkTGd2cHBFQ3ExekRVc1NCcUVFS0NaR3NyMkVJSkcwZU1qanA4eWVCc1prOXAySDkzcGtRTFJkRHpaTHp0M04wM2Y4TDNrN3l0Y29PTkhWYVlFclhHN3RJaVhnWWxpJTJGalVrQ0U3cDlrdEYwc0Fnam15TzVFb2t5WVNBYTdrdUxHejRJakNzY1F1S2JHVlBheFl4Y1VxbEdCJTJCUW95NXoyS1dOV3RaR3hGSXRDbFdRUkU5JTJGaEJJJTJGaWpDV2hxRGt5ekEyVGZkMGZ1NUFudWVWY1YzdTlJJTJCUzNTNGpHa0ZoWEVyYXRVaXMxdnZLbGI0MXBwOWpnJTJGNUJHd0RFM2dYOU02ZVlOZW1QZWpIbjVPTVlvSHBIMkh0NUNpdnlXcUlkQWgxeiUyQjgyNjBjUXdJcTlTaVlPUQ; _TRK_EX=3''')
-        logging.info("✅ 쿠키 로드 완료")
-    except Exception:
-        COOKIE_FILE.unlink(True)
-
-# ── 로그인 함수 ──────────────────────────────────────
-def _login():
-    # 1) CSRF 토큰
-    sess.headers["Referer"] = LOGIN_PAGE
-    html = sess.get(LOGIN_PAGE, timeout=10).text
-    token = re.search(r'name="_token"\s+value="([^"]+)"', html)
-    payload = {
-        "_token": token.group(1) if token else "",
-        "login_id": ID,
-        "password": PW,
-        "return_url": ATTEND_URL,
-    }
-
-    # 2) POST 로그인 (+302 자동 추적) → 쿠키 저장
-    resp = sess.post(LOGIN_POST, data=payload,
-                     timeout=20, allow_redirects=True)
-    if resp.status_code not in (200, 302):
-        _dump(resp.text, "login_fail")
-        raise RuntimeError("로그인 실패")
-    
-    # resp 요청 및 응답 데이터 전체 출력(헤더 등)
-    logging.info("payload: %s", payload)
-    logging.info("로그인 code: %s", resp.status_code)
-    logging.info("resp: %s", resp)
+        return json.loads(js_obj)
+    except json.JSONDecodeError as e:
+        logger.error("cal_list JSON 변환 실패: %s", e)
+        raise
 
 
-    sess.headers["Referer"] = BASE
-    resp = sess.get(ATTEND_URL, timeout=10, allow_redirects=False)
-    if resp.status_code != 200:
-        _dump(resp.text, "login_redirect")
-        raise RuntimeError("로그인 후 리다이렉트 실패")
+# ---------------------------------------------------------------------------
+#  Public API
+# ---------------------------------------------------------------------------
 
-    #COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    #COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
-    logging.info("🔑 쿠키 저장 성공")
+def _login() -> None:
+    """세션이 비로그인 상태라면 로그인 과정을 수행한다."""
+    try:
+        logger.info("로그인 페이지 접근(_token 추출)")
+        r0 = SESS.get(_LOGIN_PAGE, timeout=10)
+        r0.raise_for_status()
+        csrf_token = _extract_csrf_token(r0.text)
 
-# ── cal_list 추출 ────────────────────────────────────
-CAL_RE = re.compile(r"cal_list\s*=\s*({.*?})[;\n]", re.S)
+        payload = {
+            "_token": csrf_token,
+            "login_id": _LOGIN_ID,
+            "password": _PASSWORD,
+            "keep_login": "on",
+        }
 
-def _attend_page():
-    sess.headers["Referer"] = ATTEND_URL
-    return sess.get(ATTEND_URL, timeout=10, allow_redirects=False)
+        logger.info("로그인 POST 시도")
+        r1 = SESS.post(
+            _LOGIN_POST,
+            data=payload,
+            allow_redirects=False,
+            headers={
+                **_COMMON_HEADERS,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://member.hackers.com",
+                "Referer": _LOGIN_PAGE,
+            },
+            timeout=10,
+        )
+        if r1.status_code != 302:
+            raise RuntimeError(f"로그인 실패(status {r1.status_code})")
 
-def fetch_cal_list() -> dict:
-    for step in (1, 2):
-        res = _attend_page()
-        logging.info("GET 출석페이지 → %s", res.status_code)
+        redirect_url = r1.headers["Location"]
+        logger.info("리다이렉트 GET → %s", redirect_url)
+        # 첫 GET (refresh 메타 대응)
+        SESS.get(
+            redirect_url,
+            allow_redirects=False,
+            headers={**_COMMON_HEADERS, "Referer": "https://member.hackers.com/"},
+            timeout=10,
+        )
+        logger.info("세션 로그인 완료")
+    except requests.RequestException as e:
+        logger.exception("네트워크 오류: %s", e)
+        raise
 
-        if res.status_code in (301, 302) or "logout" in res.text:
-            _dump(res.text, f"logout_{step}")
-            _login(); continue
 
-        m = CAL_RE.search(res.text)
-        if m:
-            logging.info("✅ cal_list 추출 성공")
-            return json.loads(m.group(1).replace("'", '"'))
+def fetch_cal_list(max_retry: int = 3) -> Dict[str, str]:
+    """목표 페이지에서 cal_list dict 를 반환.
 
-        _dump(res.text, f"no_cal_list_{step}")
-        _login()
-    raise RuntimeError("cal_list 추출 실패")
+    1. 페이지 GET → cal_list 추출
+    2. 실패 시 _login() 후 재시도(최대 max_retry)
+    """
+    attempt = 0
+    while attempt < max_retry:
+        attempt += 1
+        try:
+            logger.info("TARGET GET (attempt %d) …", attempt)
+            r = SESS.get(
+                _TARGET_URL,
+                headers={**_COMMON_HEADERS, "Referer": _TARGET_URL},
+                timeout=10,
+            )
+            r.raise_for_status()
+            cal_dict = _parse_cal_list(r.text)
+            if cal_dict is not None:
+                logger.info("cal_list 파싱 성공 (%d 항목)", len(cal_dict))
+                return cal_dict
+            logger.warning("cal_list 미발견 – 재로그인 시도")
+        except requests.RequestException as e:
+            logger.error("네트워크 오류: %s", e)
+        except Exception as e:
+            logger.error("오류 발생: %s", e)
+
+        # 재로그인 후 재시도
+        try:
+            _login()
+        except Exception as e:
+            logger.error("로그인 재시도 실패: %s", e)
+            break  # 로그인 자체가 안 되면 추가 시도 무의미
+
+    raise RuntimeError("cal_list를 찾을 수 없습니다 (재시도 초과)")
+
 
 def check_attendance() -> bool:
-    today = date.today().strftime("%Y-%m-%d")
-    return today in fetch_cal_list()
+    """오늘 날짜 출석 여부(True/False) 반환."""
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()  # YYYY-MM-DD
+    logger.info("오늘 날짜: %s", today)
+    cal_dict = fetch_cal_list()
+    result = cal_dict.get(today) == "Y"
+    logger.info("출석 결과: %s", result)
+    return result
 
-# ── CLI 테스트 ──────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+#  CLI 실행 예시
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     try:
-        print("✅" if check_attendance() else "❌", flush=True)
-    except Exception as e:
-        print("🚨", e, flush=True)
+        present = check_attendance()
+        logger.info("✅ 출석 여부: %s", "YES" if present else "NO")
+    except Exception as err:
+        logger.error("프로그램 실패: %s", err)
+        sys.exit(1)
