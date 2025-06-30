@@ -69,8 +69,9 @@ def _login():
         raise RuntimeError("로그인 실패")
     
     # resp 요청 및 응답 데이터 전체 출력(헤더 등)
-    logging.info("로그인 성공: %s", resp.status_code)
-    logging.info("resp: %s", resp.text)
+    logging.info("payload: %s", payload)
+    logging.info("로그인 code: %s", resp.status_code)
+    logging.info("resp: %s", resp)
 
 
     sess.headers["Referer"] = BASE
@@ -79,7 +80,7 @@ def _login():
         _dump(resp.text, "login_redirect")
         raise RuntimeError("로그인 후 리다이렉트 실패")
 
-    COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    #COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
     #COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
     logging.info("🔑 쿠키 저장 성공")
 
