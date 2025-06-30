@@ -3,19 +3,29 @@ import os, asyncio, traceback, discord
 from discord.ext import tasks, commands
 from discord.ext.commands import Paginator
 from datetime import datetime, timezone
-from check_attendance import check_attendance, fetch_cal_list   # ← 동기 함수
+from check_attendance import check_attendance, fetch_cal_list
 
 TOKEN      = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-# ① Intents ─ Slash 명령만 쓰면 기본값이면 충분합니다
 intents = discord.Intents.default()
-
-intents.message_content = True  # 필수: prefix 명령어 처리 위해 필요
+intents.message_content = True            # prefix 명령 필수
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ③ Slash(/확인) 명령 등록
-#@bot.tree.command(name="확인", description="오늘 출석 여부를 즉시 확인합니다")
+# ── 1시간마다 자동 체크 ─────────────────────────────
+@tasks.loop(hours=1)
+async def attendance_loop():
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    ch  = bot.get_channel(CHANNEL_ID)
+    try:
+        ok = await asyncio.get_running_loop().run_in_executor(None, check_attendance)
+        if not ok:
+            await ch.send(f"❌ [{now}] 아직 미출석입니다! 빨리 출석하세요.")
+    except Exception:
+        err = traceback.format_exc(limit=1)
+        await ch.send(f"🚨 출석 체크 오류!\n```{err}```")
+
+# ── !확인 ───────────────────────────────────────────
 @bot.command(name="확인")
 async def cmd_check(ctx):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -23,60 +33,44 @@ async def cmd_check(ctx):
         ok = await asyncio.get_running_loop().run_in_executor(None, check_attendance)
         msg = "✅ 이미 출석했습니다!" if ok else "❌ 아직 미출석입니다!"
     except Exception as e:
-        msg = f"🚨 오류 발생: {e}"
+        msg = f"🚨 오류: {e}"
     await ctx.send(f"[{now}] {msg}")
 
+# ── !전체확인 ───────────────────────────────────────
 @bot.command(name="전체확인")
 async def cmd_full(ctx):
-    """cal_list의 모든 출석 날을 메시지로 출력합니다."""
     await ctx.defer()
     try:
         cal = await asyncio.get_running_loop().run_in_executor(None, fetch_cal_list)
         lines = [f"{d}: {v}" for d, v in sorted(cal.items())]
-        paginator = Paginator(prefix="```", suffix="```")
-        for line in lines:
-            paginator.add_line(line)
-        for page in paginator.pages:
+        pag = Paginator(prefix="```", suffix="```")
+        for ln in lines:
+            pag.add_line(ln)
+        for page in pag.pages:
             await ctx.send(page)
     except Exception as e:
-        await ctx.send(f"🚨 오류 발생: {e}")
+        await ctx.send(f"🚨 오류: {e}")
 
-# ④ 1시간 주기 자동 체크 태스크
-@tasks.loop(hours=1)
-async def attendance_loop():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    channel = bot.get_channel(CHANNEL_ID)
-    try:
-        ok = await asyncio.get_running_loop().run_in_executor(None, check_attendance)
-        if not ok:
-            await channel.send(f"❌ [{now}] 아직 미출석입니다! 빨리 출석하세요.")
-    except Exception:
-        err = traceback.format_exc(limit=1)
-        await channel.send(f"🚨 [{now}] 출석 체크 오류!\n```{err}```")
-
-# ─────────────────────────────────────────────────────────
-# !남은시간  → 다음 자동 알림까지 남은 시간 표시
-# ─────────────────────────────────────────────────────────
+# ── !남은시간 ──────────────────────────────────────
 @bot.command(name="남은시간")
 async def cmd_remaining(ctx):
-    if attendance_loop.next_iteration is None:          # 루프가 아직 안 돌았다면
+    if attendance_loop.next_iteration is None:
         await ctx.send("⏳ 아직 루프가 초기화되지 않았어요.")
         return
-    now  = datetime.now(timezone.utc)
-    next = attendance_loop.next_iteration               # UTC datetime 객체 :contentReference[oaicite:3]{index=3}
-    remaining = next - now
-    minutes, seconds = divmod(int(remaining.total_seconds()), 60)
-    await ctx.send(f"⏰ 다음 자동 알림까지 {minutes}분 {seconds}초 남았습니다.")
+    now   = datetime.now(timezone.utc)
+    nxt   = attendance_loop.next_iteration
+    delta = nxt - now
+    m, s  = divmod(int(delta.total_seconds()), 60)
+    await ctx.send(f"⏰ 다음 자동 알림까지 {m}분 {s}초 남았습니다.")
 
-# ⑤ 봇 준비 → Slash 동기화 & 태스크 시작
+# ── on_ready ───────────────────────────────────────
 @bot.event
 async def on_ready():
-    #await bot.tree.sync()          # 길드 범위 지정 안 하면 전역 등록
     print(f"✅ Bot ready: {bot.user} ({bot.user.id})")
     ch = bot.get_channel(CHANNEL_ID)
     if ch:
-        await ch.send(f"🤖 Toeic Bot 실행 완료 ({bot.user.id})")
+        await ch.send("🤖 봇이 실행되었습니다!")
     if not attendance_loop.is_running():
         attendance_loop.start()
 
-bot.run(TOKEN)
+bot.run(TOKEN)  # systemd에서는 python -u 로 실행해 실시간 로그 확보
