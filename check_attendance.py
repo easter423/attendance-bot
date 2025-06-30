@@ -96,6 +96,7 @@ def _api_cal_list() -> dict:
         _dump(res.text, "api_fail", "txt")
         raise RuntimeError("API 호출 실패")
     data = res.json()
+    print("API 응답:", data)  # 디버깅용
     return {d: "Y" for d in data.get("check_date_list", {})}
 
 def fetch_cal_list() -> dict:
