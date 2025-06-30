@@ -42,6 +42,8 @@ async def cmd_full(ctx):
     await ctx.defer()
     try:
         cal = await asyncio.get_running_loop().run_in_executor(None, fetch_cal_list)
+        await ctx.send("📅 전체 출석 현황:")
+        await ctx.send("전체 출석 일수: " + str(len(cal)))
         lines = [f"{d}: {v}" for d, v in sorted(cal.items())]
         pag = Paginator(prefix="```", suffix="```")
         for ln in lines:
