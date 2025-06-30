@@ -67,6 +67,25 @@ def _login():
         _dump(resp.text, "login_fail")
         raise RuntimeError("로그인 실패")
     
+    # resp 요청 및 응답 데이터 전체 출력(헤더 등)
+    logging.info("로그인 성공: %s", resp.status_code)
+    logging.debug("응답 헤더: %s", resp.headers)
+    logging.debug("응답 쿠키: %s", resp.cookies)
+    logging.debug("응답 본문: %s", resp.text[:500])  # 처음 500자만 출력
+    logging.debug("요청 URL: %s", resp.url)
+    logging.debug("요청 헤더: %s", resp.request.headers)
+    logging.debug("요청 본문: %s", resp.request.body)
+    logging.debug("요청 쿠키: %s", resp.request.headers.get("Cookie"))
+    logging.debug("요청 메소드: %s", resp.request.method)
+    logging.debug("요청 쿼리: %s", resp.request.url.split('?')[1] if '?' in resp.request.url else None)
+    logging.debug("요청 시간: %s", resp.elapsed)
+    logging.debug("요청 프로토콜: %s", resp.request.url.split(':')[0])
+    logging.debug("요청 IP: %s", resp.raw._connection.sock.getpeername()[0])
+    logging.debug("응답 시간: %s", resp.elapsed)
+    logging.debug("응답 프로토콜: %s", resp.raw._connection.sock.getsockname()[0])
+    logging.debug("응답 IP: %s", resp.raw._connection.sock.getsockname()[0])
+
+
     sess.headers["Referer"] = BASE
     resp = sess.get(ATTEND_URL, timeout=10, allow_redirects=False)
     if resp.status_code != 200:
