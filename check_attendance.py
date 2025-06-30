@@ -58,10 +58,11 @@ def _login() -> None:
     }
     r = sess.post(LOGIN_POST, data=payload, allow_redirects=False, timeout=10)
     if r.status_code not in (302, 200):
+        print("🔑💥 로그인 실패  {r.status_code}", flush=True)
         raise RuntimeError(f"로그인 실패({r.status_code})")
     COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
     COOKIE_FILE.write_bytes(pickle.dumps(sess.cookies))
-    print("🔑  새 쿠키 저장 완료")
+    print("🔑  새 쿠키 저장 완료", flush=True)
 
 # ── cal_list 추출 ────────────────────────────────────
 def fetch_cal_list() -> dict:
@@ -89,4 +90,4 @@ def check_attendance() -> bool:
 # ── CLI 테스트 ───────────────────────────────────────
 if __name__ == "__main__":
     ok = check_attendance()
-    print("✅ 출석 완료" if ok else "❌ 아직 미출석")
+    print("✅ 출석 완료" if ok else "❌ 아직 미출석", flush=True)
