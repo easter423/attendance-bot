@@ -148,6 +148,7 @@ def _login() -> None:
             timeout=10,
         )
         logger.info("세션 로그인 완료")
+        return redirect_url
     except requests.RequestException as e:
         logger.exception("네트워크 오류: %s", e)
         raise
@@ -160,13 +161,14 @@ def fetch_cal_list(max_retry: int = 3) -> Dict[str, str]:
     2. 실패 시 _login() 후 재시도(최대 max_retry)
     """
     attempt = 0
+    redirect_url = _TARGET_URL
     while attempt < max_retry:
         attempt += 1
         try:
             logger.info("TARGET GET (attempt %d) …", attempt)
             r = SESS.get(
-                _TARGET_URL,
-                headers={**_COMMON_HEADERS, "Referer": _TARGET_URL},
+                redirect_url,
+                headers={**_COMMON_HEADERS, "Referer": redirect_url},
                 timeout=10,
             )
             r.raise_for_status()
@@ -182,9 +184,12 @@ def fetch_cal_list(max_retry: int = 3) -> Dict[str, str]:
 
         # 재로그인 후 재시도
         try:
-            _login()
+            redirect_url = _login()
         except Exception as e:
             logger.error("로그인 재시도 실패: %s", e)
+            with open("debug.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            logger.info("🔍 debug.html 저장됨 – HTML 내용을 수동 확인해보세요.")
             break  # 로그인 자체가 안 되면 추가 시도 무의미
 
     raise RuntimeError("cal_list를 찾을 수 없습니다 (재시도 초과)")
